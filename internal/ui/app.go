@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -17,6 +18,8 @@ type statusMsg struct {
 	branch     string
 	hasChanges bool
 }
+
+type tickMsg time.Time
 
 type viewMode int
 
@@ -51,7 +54,14 @@ func (m Model) Init() tea.Cmd {
 		m.checkStatus(),
 		m.stagingView.Init(),
 		m.branchView.Init(),
+		tickCmd(),
 	)
+}
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(time.Second*2, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
 }
 
 func (m Model) checkStatus() tea.Cmd {
@@ -165,6 +175,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case tickMsg:
+		// Auto-refresh on tick
+		return m, tea.Batch(
+			m.checkStatus(),
+			m.stagingView.loadFiles(),
+			m.branchView.loadBranches(),
+			tickCmd(), // Schedule next tick
+		)
 	}
 
 	// Update active view
