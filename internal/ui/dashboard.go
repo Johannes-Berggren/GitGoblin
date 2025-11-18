@@ -79,6 +79,11 @@ func (d *DashboardView) Update(msg tea.Msg) (*DashboardView, tea.Cmd) {
 }
 
 func (d *DashboardView) View() string {
+	// Handle case where terminal size isn't set yet
+	if d.width == 0 || d.height == 0 {
+		return "Loading..."
+	}
+
 	// Branch as large ASCII art (top)
 	branchAscii := d.renderBranchAscii()
 
@@ -182,8 +187,12 @@ func (d *DashboardView) View() string {
 	// Add padding to push logo down
 	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
 
-	// Add logo to bottom right
-	logoLine := strings.Repeat(" ", d.width-15) + logo
+	// Add logo to bottom right (ensure we have enough width)
+	logoWidth := d.width - 15
+	if logoWidth < 0 {
+		logoWidth = 0
+	}
+	logoLine := strings.Repeat(" ", logoWidth) + logo
 
 	return paddedContent + "\n" + logoLine
 }
