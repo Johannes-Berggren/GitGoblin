@@ -143,6 +143,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = viewStaging
 		return m, tea.Batch(m.checkStatus(), m.stagingView.loadFiles())
 
+	case filesLoadedMsg:
+		// Always forward to staging view
+		m.stagingView, cmd = m.stagingView.Update(msg)
+		return m, cmd
+
+	case branchesLoadedMsg:
+		// Always forward to branch view
+		m.branchView, cmd = m.branchView.Update(msg)
+		return m, cmd
+
+	case diffLoadedMsg:
+		// Always forward to staging view
+		m.stagingView, cmd = m.stagingView.Update(msg)
+		return m, cmd
+
 	case errMsg:
 		m.err = msg.err
 		return m, nil
