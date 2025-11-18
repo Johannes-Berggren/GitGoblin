@@ -12,16 +12,20 @@ import (
 )
 
 type DashboardView struct {
-	branch         string
-	files          []models.FileChange
-	aheadCount     int
-	behindCount    int
-	lastCommitTime time.Time
-	linesAdded     int
-	linesDeleted   int
-	fileStats      map[string][2]int
-	width          int
-	height         int
+	branch          string
+	files           []models.FileChange
+	aheadCount      int
+	behindCount     int
+	lastCommitTime  time.Time
+	linesAdded      int
+	linesDeleted    int
+	fileStats       map[string][2]int
+	defaultBranch   string
+	aheadOfDefault  int
+	behindOfDefault int
+	isDefaultBranch bool
+	width           int
+	height          int
 }
 
 func NewDashboardView() *DashboardView {
@@ -29,14 +33,18 @@ func NewDashboardView() *DashboardView {
 }
 
 type dashboardDataMsg struct {
-	branch         string
-	files          []models.FileChange
-	aheadCount     int
-	behindCount    int
-	lastCommitTime time.Time
-	linesAdded     int
-	linesDeleted   int
-	fileStats      map[string][2]int
+	branch          string
+	files           []models.FileChange
+	aheadCount      int
+	behindCount     int
+	lastCommitTime  time.Time
+	linesAdded      int
+	linesDeleted    int
+	fileStats       map[string][2]int
+	defaultBranch   string
+	aheadOfDefault  int
+	behindOfDefault int
+	isDefaultBranch bool
 }
 
 func (d *DashboardView) Init() tea.Cmd {
@@ -87,7 +95,20 @@ func (d *DashboardView) loadData() tea.Cmd {
 			linesDeleted += stats[1]
 		}
 
-		return dashboardDataMsg{branch, files, ahead, behind, lastCommitTime, linesAdded, linesDeleted, fileStats}
+		// Get default branch comparison
+		defaultBranch, err := git.GetDefaultBranch()
+		aheadOfDefault := 0
+		behindOfDefault := 0
+		isDefaultBranch := false
+
+		if err == nil {
+			isDefaultBranch = (branch == defaultBranch)
+			if !isDefaultBranch {
+				aheadOfDefault, behindOfDefault, _ = git.GetBranchComparison(branch, defaultBranch)
+			}
+		}
+
+		return dashboardDataMsg{branch, files, ahead, behind, lastCommitTime, linesAdded, linesDeleted, fileStats, defaultBranch, aheadOfDefault, behindOfDefault, isDefaultBranch}
 	}
 }
 
@@ -102,6 +123,10 @@ func (d *DashboardView) Update(msg tea.Msg) (*DashboardView, tea.Cmd) {
 		d.linesAdded = msg.linesAdded
 		d.linesDeleted = msg.linesDeleted
 		d.fileStats = msg.fileStats
+		d.defaultBranch = msg.defaultBranch
+		d.aheadOfDefault = msg.aheadOfDefault
+		d.behindOfDefault = msg.behindOfDefault
+		d.isDefaultBranch = msg.isDefaultBranch
 
 	case tea.WindowSizeMsg:
 		d.width = msg.Width
@@ -137,11 +162,53 @@ func (d *DashboardView) renderStatusBox() string {
 	valueStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("white"))
 
+	greenStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("34")).
+		Bold(true)
+
+	redStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196")).
+		Bold(true)
+
+	grayStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("240"))
+
+	// Build line stats with colored numbers (gray for zeros)
+	var addedText, deletedText string
+	if d.linesAdded > 0 {
+		addedText = greenStyle.Render(fmt.Sprintf("+%d", d.linesAdded))
+	} else {
+		addedText = grayStyle.Render(fmt.Sprintf("+%d", d.linesAdded))
+	}
+
+	if d.linesDeleted > 0 {
+		deletedText = redStyle.Render(fmt.Sprintf("-%d", d.linesDeleted))
+	} else {
+		deletedText = grayStyle.Render(fmt.Sprintf("-%d", d.linesDeleted))
+	}
+
+	lineStats := fmt.Sprintf("%s/%s", addedText, deletedText)
+
 	metrics := []string{
 		fmt.Sprintf("📁 %s %s", labelStyle.Render("Files Changed:"), valueStyle.Render(fmt.Sprintf("%d", len(d.files)))),
 		fmt.Sprintf("⏰ %s %s", labelStyle.Render("Last Commit:"), valueStyle.Render(timeSinceCommit)),
 		fmt.Sprintf("⬆️  %s %s", labelStyle.Render("Commits Ahead:"), valueStyle.Render(fmt.Sprintf("%d", d.aheadCount))),
-		fmt.Sprintf("📊 %s %s", labelStyle.Render("Lines:"), valueStyle.Render(fmt.Sprintf("+%d/-%d", d.linesAdded, d.linesDeleted))),
+		fmt.Sprintf("📊 %s %s", labelStyle.Render("Lines:"), lineStats),
+	}
+
+	// Add default branch comparison if not on default branch
+	if !d.isDefaultBranch && d.defaultBranch != "" {
+		orangeStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("214")).
+			Bold(true)
+
+		defaultBranchMetric := fmt.Sprintf("🎯 %s %s: %s %s",
+			labelStyle.Render("vs"),
+			valueStyle.Render(d.defaultBranch),
+			greenStyle.Render(fmt.Sprintf("↑%d", d.aheadOfDefault)),
+			orangeStyle.Render(fmt.Sprintf("↓%d", d.behindOfDefault)),
+		)
+		metrics = append(metrics, defaultBranchMetric)
 	}
 
 	content := strings.Join(metrics, "\n")
@@ -191,54 +258,79 @@ func (d *DashboardView) View() string {
 	// Main content area
 	var content string
 	if len(d.files) == 0 {
-		// Clean state - centered message
-		checkmarks := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("green")).
-			Align(lipgloss.Center).
-			Render("✓ ✓ ✓ ✓ ✓")
-
-		message := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("green")).
-			Bold(true).
-			Align(lipgloss.Center).
-			Render("NO UNCOMMITTED CHANGES")
-
-		content = lipgloss.NewStyle().
-			Width(d.width).
-			Height(d.height - 15). // Leave space for branch and logo
-			Align(lipgloss.Center, lipgloss.Center).
-			Render(lipgloss.JoinVertical(
-				lipgloss.Center,
-				checkmarks,
-				"",
-				message,
-				"",
-				checkmarks,
-			))
+		// Clean state - no message needed (metrics show 0 files)
+		content = ""
 	} else {
 		// Dirty state - full width file list, ALL files
 		titleStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("cyan")).
 			Bold(true)
 
-		fileStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("white"))
+		// Define status styles with proper colors
+		modifiedStatusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("white")).
+			Bold(true)
 
-		statusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("yellow")).
+		deletedStatusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196")).
+			Bold(true)
+
+		addedStatusStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("34")).
 			Bold(true)
 
 		// Styles for line stats
-		addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("green")).Bold(true)
-		deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("red")).Bold(true)
+		addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
+		deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		grayStatsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 
 		// Build file list content
 		var fileList strings.Builder
 
+		// Add title
+		title := titleStyle.Render(fmt.Sprintf("📄 %d Uncommitted File(s)", len(d.files)))
+		fileList.WriteString(title + "\n\n")
+
+		// Calculate max path width (terminal width - margin - status - spacing - stats)
+		// Format: " MM  path (+999/-999)\n"
+		// Margin: 5, Status: 4, Spacing: 2, Stats: ~15, Buffer: 5
+		maxPathWidth := d.width - 31
+		if maxPathWidth < 20 {
+			maxPathWidth = 20 // Minimum readable width
+		}
+
 		// Show ALL files (no limit)
 		for _, file := range d.files {
+			// Determine status color based on file state
+			var statusStyle lipgloss.Style
+			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+				statusStyle = deletedStatusStyle
+			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+				statusStyle = addedStatusStyle
+			} else {
+				// Modified, Renamed, Copied, Updated - use white
+				statusStyle = modifiedStatusStyle
+			}
+
 			status := statusStyle.Render(file.DisplayStatus())
-			path := fileStyle.Render(file.Path)
+
+			// Truncate path from left if too long
+			displayPath := file.Path
+			if len(displayPath) > maxPathWidth {
+				// Keep the end of the path (filename is most important)
+				displayPath = "..." + displayPath[len(displayPath)-(maxPathWidth-3):]
+			}
+
+			// Apply same color to path as status
+			var pathStyle lipgloss.Style
+			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+			} else {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("white"))
+			}
+			path := pathStyle.Render(displayPath)
 
 			// Get line stats for this file
 			var statsText string
@@ -246,8 +338,20 @@ func (d *DashboardView) View() string {
 				added := stats[0]
 				deleted := stats[1]
 				if added > 0 || deleted > 0 {
-					addText := addedStyle.Render(fmt.Sprintf("+%d", added))
-					delText := deletedStyle.Render(fmt.Sprintf("-%d", deleted))
+					// Use gray for zero values, green/red for actual changes
+					var addText, delText string
+					if added > 0 {
+						addText = addedStyle.Render(fmt.Sprintf("+%d", added))
+					} else {
+						addText = grayStatsStyle.Render(fmt.Sprintf("+%d", added))
+					}
+
+					if deleted > 0 {
+						delText = deletedStyle.Render(fmt.Sprintf("-%d", deleted))
+					} else {
+						delText = grayStatsStyle.Render(fmt.Sprintf("-%d", deleted))
+					}
+
 					statsText = fmt.Sprintf(" (%s/%s)", addText, delText)
 				}
 			}
@@ -255,19 +359,12 @@ func (d *DashboardView) View() string {
 			fileList.WriteString(fmt.Sprintf(" %s  %s%s\n", status, path, statsText))
 		}
 
-		// Wrap file list in bordered box
-		fileBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("240")).
-			Padding(1, 2).
+		// Apply left margin to entire file list
+		fileListStyle := lipgloss.NewStyle().
 			MarginLeft(5).
 			MarginTop(1)
 
-		// Add title above the box
-		title := titleStyle.Render(fmt.Sprintf("📄 %d Uncommitted File(s)", len(d.files)))
-		boxContent := fileBoxStyle.Render(strings.TrimRight(fileList.String(), "\n"))
-
-		content = lipgloss.JoinVertical(lipgloss.Left, "", title, boxContent)
+		content = fileListStyle.Render(strings.TrimRight(fileList.String(), "\n"))
 	}
 
 	// Create subtle divider

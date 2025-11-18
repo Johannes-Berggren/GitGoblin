@@ -126,3 +126,70 @@ func DeleteBranch(name string, force bool) error {
 	}
 	return nil
 }
+
+// GetDefaultBranch detects the repository's default branch
+func GetDefaultBranch() (string, error) {
+	// Method 1: Try symbolic-ref (fastest, most reliable if set)
+	cmd := exec.Command("git", "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
+	output, err := cmd.Output()
+	if err == nil {
+		branchName := strings.TrimSpace(string(output))
+		// Output is like "origin/main", strip "origin/" prefix
+		if strings.HasPrefix(branchName, "origin/") {
+			return strings.TrimPrefix(branchName, "origin/"), nil
+		}
+		return branchName, nil
+	}
+
+	// Method 2: Try git remote show origin
+	cmd = exec.Command("git", "remote", "show", "origin")
+	output, err = cmd.Output()
+	if err == nil {
+		scanner := bufio.NewScanner(bytes.NewReader(output))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.Contains(line, "HEAD branch:") {
+				parts := strings.Split(line, ":")
+				if len(parts) == 2 {
+					return strings.TrimSpace(parts[1]), nil
+				}
+			}
+		}
+	}
+
+	// Method 3: Fallback to common default branch names
+	commonDefaults := []string{"main", "master", "dev", "develop"}
+	for _, branchName := range commonDefaults {
+		cmd = exec.Command("git", "rev-parse", "--verify", "origin/"+branchName)
+		if err := cmd.Run(); err == nil {
+			return branchName, nil
+		}
+	}
+
+	return "", fmt.Errorf("could not detect default branch")
+}
+
+// GetBranchComparison returns ahead/behind counts compared to the default branch
+func GetBranchComparison(currentBranch, defaultBranch string) (ahead, behind int, err error) {
+	// Use git rev-list --left-right --count to get both values efficiently
+	// Format: origin/<default>...HEAD
+	target := fmt.Sprintf("origin/%s...HEAD", defaultBranch)
+	cmd := exec.Command("git", "rev-list", "--left-right", "--count", target)
+	output, cmdErr := cmd.Output()
+	if cmdErr != nil {
+		return 0, 0, fmt.Errorf("failed to compare branches: %w", cmdErr)
+	}
+
+	// Output format: "5\t3" (5 behind, 3 ahead)
+	parts := strings.Fields(strings.TrimSpace(string(output)))
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("unexpected git rev-list output format")
+	}
+
+	// First number is commits in default branch not in current (behind)
+	// Second number is commits in current branch not in default (ahead)
+	fmt.Sscanf(parts[0], "%d", &behind)
+	fmt.Sscanf(parts[1], "%d", &ahead)
+
+	return ahead, behind, nil
+}
