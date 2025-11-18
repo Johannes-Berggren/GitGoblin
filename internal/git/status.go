@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/johannesberggren/gitgoblin/internal/models"
 )
@@ -138,4 +140,70 @@ func HasUncommittedChanges() (bool, error) {
 		return false, err
 	}
 	return len(files) > 0, nil
+}
+
+// GetLastCommitTime returns the timestamp of the last commit
+func GetLastCommitTime() (time.Time, error) {
+	cmd := exec.Command("git", "log", "-1", "--format=%ct")
+	output, err := cmd.Output()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to get last commit time: %w", err)
+	}
+
+	timestampStr := strings.TrimSpace(string(output))
+	if timestampStr == "" {
+		return time.Time{}, fmt.Errorf("no commits found")
+	}
+
+	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to parse timestamp: %w", err)
+	}
+
+	return time.Unix(timestamp, 0), nil
+}
+
+// GetLineStats returns per-file line statistics for uncommitted changes
+// Returns a map of filename -> [added, deleted]
+func GetLineStats() (map[string][2]int, error) {
+	cmd := exec.Command("git", "diff", "--numstat")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get line stats: %w", err)
+	}
+
+	fileStats := make(map[string][2]int)
+	scanner := bufio.NewScanner(bytes.NewReader(output))
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+
+		addStr := fields[0]
+		delStr := fields[1]
+		filename := fields[2]
+
+		added := 0
+		deleted := 0
+
+		// Handle binary files (marked with -)
+		if addStr != "-" {
+			if count, err := strconv.Atoi(addStr); err == nil {
+				added = count
+			}
+		}
+
+		if delStr != "-" {
+			if count, err := strconv.Atoi(delStr); err == nil {
+				deleted = count
+			}
+		}
+
+		fileStats[filename] = [2]int{added, deleted}
+	}
+
+	return fileStats, nil
 }
