@@ -25,7 +25,7 @@ type viewMode int
 
 const (
 	viewStaging viewMode = iota
-	viewBranches
+	viewGraph
 	viewCommit
 )
 
@@ -34,7 +34,7 @@ type Model struct {
 	height       int
 	mode         viewMode
 	stagingView  *StagingView
-	branchView   *BranchView
+	graphView    *GraphView
 	commitView   *CommitView
 	err          error
 	branch       string
@@ -44,7 +44,7 @@ type Model struct {
 func NewModel() Model {
 	return Model{
 		stagingView: NewStagingView(),
-		branchView:  NewBranchView(),
+		graphView:   NewGraphView(),
 		mode:        viewStaging, // Will be determined on init
 	}
 }
@@ -53,7 +53,7 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.checkStatus(),
 		m.stagingView.Init(),
-		m.branchView.Init(),
+		m.graphView.Init(),
 		tickCmd(),
 	)
 }
@@ -96,13 +96,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(
 				m.checkStatus(),
 				m.stagingView.loadFiles(),
-				m.branchView.loadBranches(),
+				m.graphView.loadCommits(),
 			)
 
-		case "b":
-			// Switch to branch view
+		case "b", "h":
+			// Switch to graph view (history)
 			if m.mode != viewCommit {
-				m.mode = viewBranches
+				m.mode = viewGraph
 			}
 			return m, nil
 
@@ -141,11 +141,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.branch = msg.branch
 		m.hasChanges = msg.hasChanges
 
-		// Smart start screen: show staging if dirty, branches if clean
+		// Smart start screen: show staging if dirty, graph if clean
 		if msg.hasChanges {
 			m.mode = viewStaging
 		} else {
-			m.mode = viewBranches
+			m.mode = viewGraph
 		}
 
 	case commitSuccessMsg:
@@ -158,9 +158,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stagingView, cmd = m.stagingView.Update(msg)
 		return m, cmd
 
-	case branchesLoadedMsg:
-		// Always forward to branch view
-		m.branchView, cmd = m.branchView.Update(msg)
+	case commitsLoadedMsg:
+		// Always forward to graph view
+		m.graphView, cmd = m.graphView.Update(msg)
 		return m, cmd
 
 	case diffLoadedMsg:
@@ -181,7 +181,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.checkStatus(),
 			m.stagingView.loadFiles(),
-			m.branchView.loadBranches(),
+			m.graphView.loadCommits(),
 			tickCmd(), // Schedule next tick
 		)
 	}
@@ -192,8 +192,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stagingView, cmd = m.stagingView.Update(msg)
 		cmds = append(cmds, cmd)
 
-	case viewBranches:
-		m.branchView, cmd = m.branchView.Update(msg)
+	case viewGraph:
+		m.graphView, cmd = m.graphView.Update(msg)
 		cmds = append(cmds, cmd)
 
 	case viewCommit:
@@ -219,8 +219,8 @@ func (m Model) View() string {
 	switch m.mode {
 	case viewStaging:
 		content = m.stagingView.View()
-	case viewBranches:
-		content = m.branchView.View()
+	case viewGraph:
+		content = m.graphView.View()
 	case viewCommit:
 		if m.commitView != nil {
 			content = m.commitView.View()
@@ -288,13 +288,14 @@ func (m Model) renderFooter() string {
 			"a: stage all",
 			"d: toggle diff",
 			"c: commit",
-			"b: branches",
+			"b/h: graph",
 			"r: refresh",
 			"q: quit",
 		}
-	case viewBranches:
+	case viewGraph:
 		keys = []string{
 			"j/k: navigate",
+			"g/G: top/bottom",
 			"s: staging",
 			"r: refresh",
 			"q: quit",
