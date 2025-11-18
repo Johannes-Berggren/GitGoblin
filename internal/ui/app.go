@@ -14,65 +14,134 @@ type errMsg struct {
 }
 
 type statusMsg struct {
-	branch string
-	status string
+	branch     string
+	hasChanges bool
 }
 
+type viewMode int
+
+const (
+	viewStaging viewMode = iota
+	viewBranches
+	viewCommit
+)
+
 type Model struct {
-	width      int
-	height     int
-	graphView  *GraphView
-	err        error
-	branch     string
-	statusText string
+	width        int
+	height       int
+	mode         viewMode
+	stagingView  *StagingView
+	branchView   *BranchView
+	commitView   *CommitView
+	err          error
+	branch       string
+	hasChanges   bool
 }
 
 func NewModel() Model {
 	return Model{
-		graphView: NewGraphView(),
+		stagingView: NewStagingView(),
+		branchView:  NewBranchView(),
+		mode:        viewStaging, // Will be determined on init
 	}
 }
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		m.graphView.Init(),
-		m.loadStatus(),
+		m.checkStatus(),
+		m.stagingView.Init(),
+		m.branchView.Init(),
 	)
 }
 
-func (m Model) loadStatus() tea.Cmd {
+func (m Model) checkStatus() tea.Cmd {
 	return func() tea.Msg {
 		branch, err := git.GetCurrentBranch()
 		if err != nil {
 			branch = "unknown"
 		}
-		status, err := git.GetStatus()
+
+		hasChanges, err := git.HasUncommittedChanges()
 		if err != nil {
-			status = "unknown"
+			hasChanges = false
 		}
-		return statusMsg{branch, status}
+
+		return statusMsg{branch, hasChanges}
 	}
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Global keys
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
 		case "r":
-			// Refresh
+			// Refresh all views
 			return m, tea.Batch(
-				m.graphView.loadCommits(),
-				m.loadStatus(),
+				m.checkStatus(),
+				m.stagingView.loadFiles(),
+				m.branchView.loadBranches(),
 			)
+
+		case "b":
+			// Switch to branch view
+			if m.mode != viewCommit {
+				m.mode = viewBranches
+			}
+			return m, nil
+
+		case "s":
+			// Switch to staging view
+			if m.mode != viewCommit {
+				m.mode = viewStaging
+			}
+			return m, nil
+
+		case "c":
+			// Open commit editor (only from staging view)
+			if m.mode == viewStaging && m.stagingView.HasStagedFiles() {
+				stagedCount := 0
+				for _, f := range m.stagingView.files {
+					if f.IsStaged {
+						stagedCount++
+					}
+				}
+				m.commitView = NewCommitView(stagedCount)
+				m.mode = viewCommit
+				return m, m.commitView.Init()
+			}
+		}
+
+		// Handle commit view specially
+		if m.mode == viewCommit {
+			// Check for cancel
+			if msg.String() == "esc" {
+				m.mode = viewStaging
+				return m, m.stagingView.loadFiles()
+			}
 		}
 
 	case statusMsg:
 		m.branch = msg.branch
-		m.statusText = msg.status
+		m.hasChanges = msg.hasChanges
+
+		// Smart start screen: show staging if dirty, branches if clean
+		if msg.hasChanges {
+			m.mode = viewStaging
+		} else {
+			m.mode = viewBranches
+		}
+
+	case commitSuccessMsg:
+		// Commit successful, return to staging
+		m.mode = viewStaging
+		return m, tea.Batch(m.checkStatus(), m.stagingView.loadFiles())
 
 	case errMsg:
 		m.err = msg.err
@@ -83,10 +152,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	}
 
-	// Update the graph view
-	m.graphView, cmd = m.graphView.Update(msg)
+	// Update active view
+	switch m.mode {
+	case viewStaging:
+		m.stagingView, cmd = m.stagingView.Update(msg)
+		cmds = append(cmds, cmd)
 
-	return m, cmd
+	case viewBranches:
+		m.branchView, cmd = m.branchView.Update(msg)
+		cmds = append(cmds, cmd)
+
+	case viewCommit:
+		if m.commitView != nil {
+			m.commitView, cmd = m.commitView.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m Model) View() string {
@@ -97,21 +180,29 @@ func (m Model) View() string {
 	// Header
 	header := m.renderHeader()
 
-	// Graph view
-	graphContent := m.graphView.View()
+	// Content based on mode
+	var content string
+	switch m.mode {
+	case viewStaging:
+		content = m.stagingView.View()
+	case viewBranches:
+		content = m.branchView.View()
+	case viewCommit:
+		if m.commitView != nil {
+			content = m.commitView.View()
+		}
+	}
 
 	// Footer
 	footer := m.renderFooter()
 
-	// Combine with proper spacing
-	content := lipgloss.JoinVertical(
+	// Combine
+	return lipgloss.JoinVertical(
 		lipgloss.Left,
 		header,
-		graphContent,
+		content,
 		footer,
 	)
-
-	return content
 }
 
 func (m Model) renderHeader() string {
@@ -127,11 +218,20 @@ func (m Model) renderHeader() string {
 	statusStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("244"))
 
+	dirtyStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("yellow"))
+
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("238"))
 
 	title := titleStyle.Render("🧙 GitGoblin")
-	branchInfo := branchStyle.Render(m.branch) + " " + statusStyle.Render(fmt.Sprintf("(%s)", m.statusText))
+
+	status := "(clean)"
+	if m.hasChanges {
+		status = dirtyStyle.Render("(uncommitted changes)")
+	}
+
+	branchInfo := branchStyle.Render(m.branch) + " " + statusStyle.Render(status)
 
 	headerLine := lipgloss.JoinHorizontal(lipgloss.Top, title, branchInfo)
 	divider := dividerStyle.Render(strings.Repeat("─", m.width))
@@ -146,11 +246,30 @@ func (m Model) renderFooter() string {
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("238"))
 
-	keys := []string{
-		"j/k: navigate",
-		"g/G: top/bottom",
-		"r: refresh",
-		"q: quit",
+	var keys []string
+	switch m.mode {
+	case viewStaging:
+		keys = []string{
+			"space: stage/unstage",
+			"a: stage all",
+			"d: toggle diff",
+			"c: commit",
+			"b: branches",
+			"r: refresh",
+			"q: quit",
+		}
+	case viewBranches:
+		keys = []string{
+			"j/k: navigate",
+			"s: staging",
+			"r: refresh",
+			"q: quit",
+		}
+	case viewCommit:
+		keys = []string{
+			"ctrl+d: commit",
+			"esc: cancel",
+		}
 	}
 
 	divider := dividerStyle.Render(strings.Repeat("─", m.width))

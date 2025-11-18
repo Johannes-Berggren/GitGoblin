@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -69,7 +70,8 @@ func parseCommits(output []byte) []models.Commit {
 			continue
 		}
 
-		timestamp, _ := time.Parse("1136239445", parts[4])
+		unixTime, _ := strconv.ParseInt(parts[4], 10, 64)
+		timestamp := time.Unix(unixTime, 0)
 
 		refs := []string{}
 		if parts[5] != "" {
