@@ -79,40 +79,17 @@ func (d *DashboardView) Update(msg tea.Msg) (*DashboardView, tea.Cmd) {
 }
 
 func (d *DashboardView) View() string {
-	// Header
-	headerStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("170")).
-		Align(lipgloss.Center).
-		Border(lipgloss.DoubleBorder()).
-		BorderForeground(lipgloss.Color("170")).
-		Width(40).
-		MarginTop(1).
-		MarginBottom(2)
+	// Branch as large ASCII art (top)
+	branchAscii := d.renderBranchAscii()
 
-	header := headerStyle.Render("🧙 GitGoblin")
-
-	// Branch box
-	branchStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("cyan")).
-		Align(lipgloss.Center).
-		Border(lipgloss.ThickBorder()).
-		BorderForeground(lipgloss.Color("cyan")).
-		Width(30).
-		Padding(0, 1).
-		MarginBottom(2)
-
-	branchBox := branchStyle.Render(fmt.Sprintf("Branch: %s", d.branch))
-
-	// Remote status (only if diverged)
+	// Remote status (only if diverged, near branch)
 	var remoteStatus string
 	if d.aheadCount > 0 || d.behindCount > 0 {
 		remoteStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("yellow")).
 			Bold(true).
-			Align(lipgloss.Center).
-			MarginBottom(2)
+			MarginBottom(1).
+			MarginLeft(5)
 
 		parts := []string{}
 		if d.aheadCount > 0 {
@@ -124,10 +101,10 @@ func (d *DashboardView) View() string {
 		remoteStatus = remoteStyle.Render("⚠ origin: " + strings.Join(parts, ", "))
 	}
 
-	// Files or clean message
+	// Main content area
 	var content string
 	if len(d.files) == 0 {
-		// Clean state - big prominent message
+		// Clean state - centered message
 		checkmarks := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("green")).
 			Align(lipgloss.Center).
@@ -139,31 +116,25 @@ func (d *DashboardView) View() string {
 			Align(lipgloss.Center).
 			Render("NO UNCOMMITTED CHANGES")
 
-		content = lipgloss.JoinVertical(
-			lipgloss.Center,
-			checkmarks,
-			"",
-			message,
-			"",
-			checkmarks,
-		)
+		content = lipgloss.NewStyle().
+			Width(d.width).
+			Height(d.height - 15). // Leave space for branch and logo
+			Align(lipgloss.Center, lipgloss.Center).
+			Render(lipgloss.JoinVertical(
+				lipgloss.Center,
+				checkmarks,
+				"",
+				message,
+				"",
+				checkmarks,
+			))
 	} else {
-		// Dirty state - show file list
-		fileCount := len(d.files)
-		displayCount := fileCount
-		if displayCount > 10 {
-			displayCount = 10
-		}
-
-		fileBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("yellow")).
-			Padding(0, 1).
-			Width(40)
-
+		// Dirty state - full width file list, ALL files
 		titleStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("yellow")).
-			Bold(true)
+			Bold(true).
+			MarginTop(2).
+			MarginBottom(1)
 
 		fileStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("white"))
@@ -173,43 +144,447 @@ func (d *DashboardView) View() string {
 			Bold(true)
 
 		var fileList strings.Builder
-		fileList.WriteString(titleStyle.Render(fmt.Sprintf("%d Uncommitted File(s)", fileCount)) + "\n")
+		fileList.WriteString(titleStyle.Render(fmt.Sprintf("%d Uncommitted File(s):", len(d.files))) + "\n\n")
 
-		for i := 0; i < displayCount; i++ {
-			file := d.files[i]
+		// Show ALL files (no limit)
+		for _, file := range d.files {
 			status := statusStyle.Render(file.DisplayStatus())
 			path := fileStyle.Render(file.Path)
 			fileList.WriteString(fmt.Sprintf(" %s  %s\n", status, path))
 		}
 
-		if fileCount > 10 {
-			moreStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("244")).
-				Italic(true)
-			fileList.WriteString(moreStyle.Render(fmt.Sprintf(" ...and %d more", fileCount-10)))
-		}
-
-		content = fileBoxStyle.Render(fileList.String())
+		content = fileList.String()
 	}
 
-	// Combine all elements
-	var parts []string
-	parts = append(parts, header)
-	parts = append(parts, branchBox)
+	// Build top section (branch + remote)
+	var topSection string
 	if remoteStatus != "" {
-		parts = append(parts, remoteStatus)
+		topSection = lipgloss.JoinVertical(lipgloss.Left, branchAscii, "", remoteStatus, "")
+	} else {
+		topSection = lipgloss.JoinVertical(lipgloss.Left, branchAscii, "")
 	}
-	parts = append(parts, content)
 
-	dashboard := lipgloss.JoinVertical(lipgloss.Center, parts...)
+	// Logo in bottom right
+	logo := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("170")).
+		Render("🧙 GitGoblin")
 
-	// Center everything in the terminal
-	fullStyle := lipgloss.NewStyle().
-		Width(d.width).
-		Height(d.height).
-		Align(lipgloss.Center, lipgloss.Center)
+	// Combine everything
+	mainContent := lipgloss.JoinVertical(lipgloss.Left, topSection, content)
 
-	return fullStyle.Render(dashboard)
+	// Position logo at bottom right
+	mainHeight := strings.Count(mainContent, "\n") + 1
+	bottomPadding := d.height - mainHeight - 2
+	if bottomPadding < 0 {
+		bottomPadding = 0
+	}
+
+	// Add padding to push logo down
+	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
+
+	// Add logo to bottom right
+	logoLine := strings.Repeat(" ", d.width-15) + logo
+
+	return paddedContent + "\n" + logoLine
+}
+
+// renderBranchAscii creates large ASCII art representation of branch name
+func (d *DashboardView) renderBranchAscii() string {
+	// Convert branch name to uppercase for cleaner ASCII art
+	branch := strings.ToUpper(d.branch)
+
+	// Build ASCII art - using block style
+	var lines [6]strings.Builder
+
+	for _, char := range branch {
+		ascii := getAsciiChar(char)
+		for i, line := range ascii {
+			lines[i].WriteString(line)
+			lines[i].WriteString(" ") // Space between letters
+		}
+	}
+
+	// Join all lines and style
+	var result strings.Builder
+	style := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("cyan")).
+		Bold(true).
+		MarginTop(1).
+		MarginBottom(1).
+		MarginLeft(5)
+
+	for _, line := range lines {
+		result.WriteString(style.Render(line.String()) + "\n")
+	}
+
+	return result.String()
+}
+
+// getAsciiChar returns ASCII art for a single character
+func getAsciiChar(c rune) [6]string {
+	switch c {
+	case 'A':
+		return [6]string{
+			" █████╗ ",
+			"██╔══██╗",
+			"███████║",
+			"██╔══██║",
+			"██║  ██║",
+			"╚═╝  ╚═╝",
+		}
+	case 'B':
+		return [6]string{
+			"██████╗ ",
+			"██╔══██╗",
+			"██████╔╝",
+			"██╔══██╗",
+			"██████╔╝",
+			"╚═════╝ ",
+		}
+	case 'C':
+		return [6]string{
+			" ██████╗",
+			"██╔════╝",
+			"██║     ",
+			"██║     ",
+			"╚██████╗",
+			" ╚═════╝",
+		}
+	case 'D':
+		return [6]string{
+			"██████╗ ",
+			"██╔══██╗",
+			"██║  ██║",
+			"██║  ██║",
+			"██████╔╝",
+			"╚═════╝ ",
+		}
+	case 'E':
+		return [6]string{
+			"███████╗",
+			"██╔════╝",
+			"█████╗  ",
+			"██╔══╝  ",
+			"███████╗",
+			"╚══════╝",
+		}
+	case 'F':
+		return [6]string{
+			"███████╗",
+			"██╔════╝",
+			"█████╗  ",
+			"██╔══╝  ",
+			"██║     ",
+			"╚═╝     ",
+		}
+	case 'G':
+		return [6]string{
+			" ██████╗ ",
+			"██╔════╝ ",
+			"██║  ███╗",
+			"██║   ██║",
+			"╚██████╔╝",
+			" ╚═════╝ ",
+		}
+	case 'H':
+		return [6]string{
+			"██╗  ██╗",
+			"██║  ██║",
+			"███████║",
+			"██╔══██║",
+			"██║  ██║",
+			"╚═╝  ╚═╝",
+		}
+	case 'I':
+		return [6]string{
+			"██╗",
+			"██║",
+			"██║",
+			"██║",
+			"██║",
+			"╚═╝",
+		}
+	case 'J':
+		return [6]string{
+			"     ██╗",
+			"     ██║",
+			"     ██║",
+			"██   ██║",
+			"╚█████╔╝",
+			" ╚════╝ ",
+		}
+	case 'K':
+		return [6]string{
+			"██╗  ██╗",
+			"██║ ██╔╝",
+			"█████╔╝ ",
+			"██╔═██╗ ",
+			"██║  ██╗",
+			"╚═╝  ╚═╝",
+		}
+	case 'L':
+		return [6]string{
+			"██╗     ",
+			"██║     ",
+			"██║     ",
+			"██║     ",
+			"███████╗",
+			"╚══════╝",
+		}
+	case 'M':
+		return [6]string{
+			"███╗   ███╗",
+			"████╗ ████║",
+			"██╔████╔██║",
+			"██║╚██╔╝██║",
+			"██║ ╚═╝ ██║",
+			"╚═╝     ╚═╝",
+		}
+	case 'N':
+		return [6]string{
+			"███╗   ██╗",
+			"████╗  ██║",
+			"██╔██╗ ██║",
+			"██║╚██╗██║",
+			"██║ ╚████║",
+			"╚═╝  ╚═══╝",
+		}
+	case 'O':
+		return [6]string{
+			" ██████╗ ",
+			"██╔═══██╗",
+			"██║   ██║",
+			"██║   ██║",
+			"╚██████╔╝",
+			" ╚═════╝ ",
+		}
+	case 'P':
+		return [6]string{
+			"██████╗ ",
+			"██╔══██╗",
+			"██████╔╝",
+			"██╔═══╝ ",
+			"██║     ",
+			"╚═╝     ",
+		}
+	case 'Q':
+		return [6]string{
+			" ██████╗ ",
+			"██╔═══██╗",
+			"██║   ██║",
+			"██║▄▄ ██║",
+			"╚██████╔╝",
+			" ╚══▀▀═╝ ",
+		}
+	case 'R':
+		return [6]string{
+			"██████╗ ",
+			"██╔══██╗",
+			"██████╔╝",
+			"██╔══██╗",
+			"██║  ██║",
+			"╚═╝  ╚═╝",
+		}
+	case 'S':
+		return [6]string{
+			"███████╗",
+			"██╔════╝",
+			"███████╗",
+			"╚════██║",
+			"███████║",
+			"╚══════╝",
+		}
+	case 'T':
+		return [6]string{
+			"████████╗",
+			"╚══██╔══╝",
+			"   ██║   ",
+			"   ██║   ",
+			"   ██║   ",
+			"   ╚═╝   ",
+		}
+	case 'U':
+		return [6]string{
+			"██╗   ██╗",
+			"██║   ██║",
+			"██║   ██║",
+			"██║   ██║",
+			"╚██████╔╝",
+			" ╚═════╝ ",
+		}
+	case 'V':
+		return [6]string{
+			"██╗   ██╗",
+			"██║   ██║",
+			"██║   ██║",
+			"╚██╗ ██╔╝",
+			" ╚████╔╝ ",
+			"  ╚═══╝  ",
+		}
+	case 'W':
+		return [6]string{
+			"██╗    ██╗",
+			"██║    ██║",
+			"██║ █╗ ██║",
+			"██║███╗██║",
+			"╚███╔███╔╝",
+			" ╚══╝╚══╝ ",
+		}
+	case 'X':
+		return [6]string{
+			"██╗  ██╗",
+			"╚██╗██╔╝",
+			" ╚███╔╝ ",
+			" ██╔██╗ ",
+			"██╔╝ ██╗",
+			"╚═╝  ╚═╝",
+		}
+	case 'Y':
+		return [6]string{
+			"██╗   ██╗",
+			"╚██╗ ██╔╝",
+			" ╚████╔╝ ",
+			"  ╚██╔╝  ",
+			"   ██║   ",
+			"   ╚═╝   ",
+		}
+	case 'Z':
+		return [6]string{
+			"███████╗",
+			"╚══███╔╝",
+			"  ███╔╝ ",
+			" ███╔╝  ",
+			"███████╗",
+			"╚══════╝",
+		}
+	case '0':
+		return [6]string{
+			" ██████╗ ",
+			"██╔═████╗",
+			"██║██╔██║",
+			"████╔╝██║",
+			"╚██████╔╝",
+			" ╚═════╝ ",
+		}
+	case '1':
+		return [6]string{
+			" ██╗",
+			"███║",
+			"╚██║",
+			" ██║",
+			" ██║",
+			" ╚═╝",
+		}
+	case '2':
+		return [6]string{
+			"██████╗ ",
+			"╚════██╗",
+			" █████╔╝",
+			"██╔═══╝ ",
+			"███████╗",
+			"╚══════╝",
+		}
+	case '3':
+		return [6]string{
+			"██████╗ ",
+			"╚════██╗",
+			" █████╔╝",
+			" ╚═══██╗",
+			"██████╔╝",
+			"╚═════╝ ",
+		}
+	case '4':
+		return [6]string{
+			"██╗  ██╗",
+			"██║  ██║",
+			"███████║",
+			"╚════██║",
+			"     ██║",
+			"     ╚═╝",
+		}
+	case '5':
+		return [6]string{
+			"███████╗",
+			"██╔════╝",
+			"███████╗",
+			"╚════██║",
+			"███████║",
+			"╚══════╝",
+		}
+	case '6':
+		return [6]string{
+			" ██████╗ ",
+			"██╔════╝ ",
+			"███████╗ ",
+			"██╔═══██╗",
+			"╚██████╔╝",
+			" ╚═════╝ ",
+		}
+	case '7':
+		return [6]string{
+			"███████╗",
+			"╚════██║",
+			"    ██╔╝",
+			"   ██╔╝ ",
+			"   ██║  ",
+			"   ╚═╝  ",
+		}
+	case '8':
+		return [6]string{
+			" █████╗ ",
+			"██╔══██╗",
+			"╚█████╔╝",
+			"██╔══██╗",
+			"╚█████╔╝",
+			" ╚════╝ ",
+		}
+	case '9':
+		return [6]string{
+			" █████╗ ",
+			"██╔══██╗",
+			"╚██████║",
+			" ╚═══██║",
+			" █████╔╝",
+			" ╚════╝ ",
+		}
+	case '-':
+		return [6]string{
+			"       ",
+			"       ",
+			"█████╗ ",
+			"╚════╝ ",
+			"       ",
+			"       ",
+		}
+	case '_':
+		return [6]string{
+			"        ",
+			"        ",
+			"        ",
+			"        ",
+			"███████╗",
+			"╚══════╝",
+		}
+	case '/':
+		return [6]string{
+			"    ██╗",
+			"   ██╔╝",
+			"  ██╔╝ ",
+			" ██╔╝  ",
+			"██╔╝   ",
+			"╚═╝    ",
+		}
+	default:
+		// For unsupported characters, return a space
+		return [6]string{
+			"   ",
+			"   ",
+			"   ",
+			"   ",
+			"   ",
+			"   ",
+		}
+	}
 }
 
 // parseUpstream extracts ahead/behind counts from upstream string
