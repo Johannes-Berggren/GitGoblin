@@ -32,6 +32,16 @@ GitGoblin displays a clean dashboard with:
 
 ## 🚀 Installation
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew install Johannes-Berggren/tap/gitgoblin
+```
+
+### Download Binary
+
+Download the latest release from [GitHub Releases](https://github.com/johannesberggren/gitgoblin/releases).
+
 ### Using `go install`
 
 ```bash

@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: gitgoblin
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: goblin
+    binary: goblin
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+brews:
+  - name: gitgoblin
+    repository:
+      owner: Johannes-Berggren
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/Johannes-Berggren/gitgoblin"
+    description: "A beautiful terminal-based Git dashboard"
+    license: "MIT"
+    install: |
+      bin.install "goblin"
+    test: |
+      system "#{bin}/goblin", "--help"
+
+release:
+  github:
+    owner: Johannes-Berggren
+    name: gitgoblin
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
