@@ -169,6 +169,29 @@ func GetDefaultBranch() (string, error) {
 	return "", fmt.Errorf("could not detect default branch")
 }
 
+// CreateBranchFromDefault creates a new branch from the latest default branch
+func CreateBranchFromDefault(branchName string) error {
+	// 1. Get default branch name
+	defaultBranch, err := GetDefaultBranch()
+	if err != nil {
+		return fmt.Errorf("failed to detect default branch: %w", err)
+	}
+
+	// 2. Fetch latest from origin
+	cmd := exec.Command("git", "fetch", "origin", defaultBranch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to fetch: %s", string(output))
+	}
+
+	// 3. Create and checkout new branch from origin/<default>
+	cmd = exec.Command("git", "checkout", "-b", branchName, "origin/"+defaultBranch)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to create branch: %s", string(output))
+	}
+
+	return nil
+}
+
 // GetBranchComparison returns ahead/behind counts compared to the default branch
 func GetBranchComparison(currentBranch, defaultBranch string) (ahead, behind int, err error) {
 	// Use git rev-list --left-right --count to get both values efficiently

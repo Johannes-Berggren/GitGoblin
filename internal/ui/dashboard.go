@@ -399,14 +399,21 @@ func (d *DashboardView) View() string {
 	// Add padding to push logo down
 	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
 
-	// Add logo to bottom right (ensure we have enough width)
-	logoWidth := d.width - 15
-	if logoWidth < 0 {
-		logoWidth = 0
-	}
-	logoLine := strings.Repeat(" ", logoWidth) + logo
+	// Add hint on left, logo on right
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	hint := hintStyle.Render("n new branch")
 
-	return paddedContent + "\n" + logoLine
+	// Calculate spacing between hint and logo
+	hintLen := 12 // "n new branch"
+	logoLen := 12 // "🧙 GitGoblin"
+	spacing := d.width - hintLen - logoLen - 5
+	if spacing < 1 {
+		spacing = 1
+	}
+
+	bottomLine := "     " + hint + strings.Repeat(" ", spacing) + logo
+
+	return paddedContent + "\n" + bottomLine
 }
 
 // renderBranchAscii creates a simple bordered box with the branch name
