@@ -13,6 +13,7 @@ type viewMode int
 const (
 	viewDashboard viewMode = iota
 	viewBranchInput
+	viewCommitFlow
 )
 
 type errMsg struct {
@@ -26,6 +27,7 @@ type clearStatusMsg struct{}
 type Model struct {
 	dashboard   *DashboardView
 	branchInput *BranchInputView
+	commitFlow  *CommitFlowView
 	viewMode    viewMode
 	statusMsg   string
 	statusStyle lipgloss.Style
@@ -68,6 +70,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statusMsg = ""
 				return m, m.branchInput.Init()
 			}
+		case "c":
+			// Only handle 'c' in dashboard mode
+			if m.viewMode == viewDashboard {
+				m.commitFlow = NewCommitFlowView()
+				m.viewMode = viewCommitFlow
+				m.statusMsg = ""
+				return m, m.commitFlow.Init()
+			}
 		}
 
 	case branchInputDoneMsg:
@@ -92,6 +102,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.branchInput = nil
 		return m, nil
 
+	case commitFlowDoneMsg:
+		m.viewMode = viewDashboard
+		m.commitFlow = nil
+		m.statusMsg = "Committed: " + msg.message
+		m.statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+		return m, tea.Batch(
+			m.dashboard.loadData(),
+			tea.Tick(time.Second*3, func(t time.Time) tea.Msg { return clearStatusMsg{} }),
+		)
+
+	case commitFlowCancelMsg:
+		m.viewMode = viewDashboard
+		m.commitFlow = nil
+		return m, m.dashboard.loadData()
+
 	case clearStatusMsg:
 		m.statusMsg = ""
 		return m, nil
@@ -102,10 +127,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.WindowSizeMsg:
-		// Forward window size to dashboard and branch input
+		// Forward window size to dashboard and active views
 		m.dashboard, cmd = m.dashboard.Update(msg)
 		if m.branchInput != nil {
 			m.branchInput, _ = m.branchInput.Update(msg)
+		}
+		if m.commitFlow != nil {
+			m.commitFlow, _ = m.commitFlow.Update(msg)
 		}
 		return m, cmd
 
@@ -124,9 +152,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Forward messages to branch input when active
+	// Forward messages to active view
 	if m.viewMode == viewBranchInput && m.branchInput != nil {
 		m.branchInput, cmd = m.branchInput.Update(msg)
+		return m, cmd
+	}
+	if m.viewMode == viewCommitFlow && m.commitFlow != nil {
+		m.commitFlow, cmd = m.commitFlow.Update(msg)
 		return m, cmd
 	}
 
@@ -138,6 +170,10 @@ func (m Model) View() string {
 	case viewBranchInput:
 		if m.branchInput != nil {
 			return m.branchInput.View()
+		}
+	case viewCommitFlow:
+		if m.commitFlow != nil {
+			return m.commitFlow.View()
 		}
 	}
 

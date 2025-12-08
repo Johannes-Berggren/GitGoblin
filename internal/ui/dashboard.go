@@ -401,10 +401,10 @@ func (d *DashboardView) View() string {
 
 	// Add hint on left, logo on right
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	hint := hintStyle.Render("n new branch")
+	hint := hintStyle.Render("n new branch • c commit")
 
 	// Calculate spacing between hint and logo
-	hintLen := 12 // "n new branch"
+	hintLen := 24 // "n new branch • c commit"
 	logoLen := 12 // "🧙 GitGoblin"
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
