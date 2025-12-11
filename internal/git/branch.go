@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/johannesberggren/gitgoblin/internal/models"
+	"github.com/Johannes-Berggren/GitGoblin/internal/models"
 )
 
 // GetBranches returns all branches with their info

@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/johannesberggren/gitgoblin/internal/git"
+	"github.com/Johannes-Berggren/GitGoblin/internal/git"
 )
 
 type CommitView struct {

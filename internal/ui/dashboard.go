@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/johannesberggren/gitgoblin/internal/git"
-	"github.com/johannesberggren/gitgoblin/internal/models"
+	"github.com/Johannes-Berggren/GitGoblin/internal/git"
+	"github.com/Johannes-Berggren/GitGoblin/internal/models"
 )
 
 type DashboardView struct {

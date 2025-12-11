@@ -1,4 +1,4 @@
-module github.com/johannesberggren/gitgoblin
+module github.com/Johannes-Berggren/GitGoblin
 
 go 1.25.4
 

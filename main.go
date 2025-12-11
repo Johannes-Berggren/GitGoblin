@@ -1,6 +1,6 @@
 package main
 
-import "github.com/johannesberggren/gitgoblin/cmd"
+import "github.com/Johannes-Berggren/GitGoblin/cmd"
 
 func main() {
 	cmd.Execute()

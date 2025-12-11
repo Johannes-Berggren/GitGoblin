@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/johannesberggren/gitgoblin/internal/models"
+	"github.com/Johannes-Berggren/GitGoblin/internal/models"
 )
 
 // GetCommits retrieves the commit history with graph information

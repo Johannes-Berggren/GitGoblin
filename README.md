@@ -40,12 +40,12 @@ brew install Johannes-Berggren/tap/gitgoblin
 
 ### Download Binary
 
-Download the latest release from [GitHub Releases](https://github.com/johannesberggren/gitgoblin/releases).
+Download the latest release from [GitHub Releases](https://github.com/Johannes-Berggren/GitGoblin/releases).
 
 ### Using `go install`
 
 ```bash
-go install github.com/johannesberggren/gitgoblin@latest
+go install github.com/Johannes-Berggren/GitGoblin@latest
 ```
 
 The binary will be installed as `gitgoblin` in your `$GOPATH/bin` directory.
@@ -53,7 +53,7 @@ The binary will be installed as `gitgoblin` in your `$GOPATH/bin` directory.
 ### From Source
 
 ```bash
-git clone https://github.com/johannesberggren/gitgoblin.git
+git clone https://github.com/Johannes-Berggren/GitGoblin.git
 cd gitgoblin
 go build -o goblin
 ```
@@ -90,7 +90,7 @@ That's it! GitGoblin is designed to be a passive, glanceable dashboard that runs
 
 ```bash
 # Clone the repository
-git clone https://github.com/johannesberggren/gitgoblin.git
+git clone https://github.com/Johannes-Berggren/GitGoblin.git
 cd gitgoblin
 
 # Build the binary
@@ -169,8 +169,8 @@ Special thanks to the Charm community for building incredible terminal tools!
 
 ## 🔗 Links
 
-- [Issues](https://github.com/johannesberggren/gitgoblin/issues)
-- [Pull Requests](https://github.com/johannesberggren/gitgoblin/pulls)
+- [Issues](https://github.com/Johannes-Berggren/GitGoblin/issues)
+- [Pull Requests](https://github.com/Johannes-Berggren/GitGoblin/pulls)
 
 ---
 
