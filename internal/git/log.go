@@ -127,6 +127,44 @@ func GetCurrentBranch() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
+// GetRepoName returns the repository name from the remote URL or directory
+func GetRepoName() (string, error) {
+	// Try to get from remote URL first
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err == nil {
+		url := strings.TrimSpace(string(output))
+		// Extract repo name from URL (handles both HTTPS and SSH formats)
+		// https://github.com/user/repo.git -> repo
+		// git@github.com:user/repo.git -> repo
+		url = strings.TrimSuffix(url, ".git")
+		parts := strings.Split(url, "/")
+		if len(parts) > 0 {
+			name := parts[len(parts)-1]
+			// Handle SSH format with colon
+			if colonIdx := strings.LastIndex(name, ":"); colonIdx != -1 {
+				name = name[colonIdx+1:]
+			}
+			if name != "" {
+				return name, nil
+			}
+		}
+	}
+
+	// Fallback to directory name
+	cmd = exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err = cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get repo name: %w", err)
+	}
+	path := strings.TrimSpace(string(output))
+	parts := strings.Split(path, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1], nil
+	}
+	return "", fmt.Errorf("could not determine repo name")
+}
+
 // GetStatus returns a simple status of the repo
 func GetStatus() (string, error) {
 	cmd := exec.Command("git", "status", "--porcelain")

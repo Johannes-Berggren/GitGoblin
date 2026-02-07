@@ -19,6 +19,7 @@ const (
 )
 
 type DashboardView struct {
+	repoName        string
 	branch          string
 	files           []models.FileChange
 	aheadCount      int
@@ -40,6 +41,7 @@ func NewDashboardView() *DashboardView {
 }
 
 type dashboardDataMsg struct {
+	repoName        string
 	branch          string
 	files           []models.FileChange
 	aheadCount      int
@@ -60,6 +62,11 @@ func (d *DashboardView) Init() tea.Cmd {
 
 func (d *DashboardView) loadData() tea.Cmd {
 	return func() tea.Msg {
+		repoName, err := git.GetRepoName()
+		if err != nil {
+			repoName = ""
+		}
+
 		branch, err := git.GetCurrentBranch()
 		if err != nil {
 			branch = "unknown"
@@ -115,13 +122,14 @@ func (d *DashboardView) loadData() tea.Cmd {
 			}
 		}
 
-		return dashboardDataMsg{branch, files, ahead, behind, lastCommitTime, linesAdded, linesDeleted, fileStats, defaultBranch, aheadOfDefault, behindOfDefault, isDefaultBranch}
+		return dashboardDataMsg{repoName, branch, files, ahead, behind, lastCommitTime, linesAdded, linesDeleted, fileStats, defaultBranch, aheadOfDefault, behindOfDefault, isDefaultBranch}
 	}
 }
 
 func (d *DashboardView) Update(msg tea.Msg) (*DashboardView, tea.Cmd) {
 	switch msg := msg.(type) {
 	case dashboardDataMsg:
+		d.repoName = msg.repoName
 		d.branch = msg.branch
 		d.files = msg.files
 		d.aheadCount = msg.aheadCount
@@ -468,40 +476,128 @@ func (d *DashboardView) renderCompactView() string {
 // renderUltraCompactView renders the densest format for <=11 row terminals
 func (d *DashboardView) renderUltraCompactView() string {
 	branchStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("cyan"))
+	repoStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("white"))
 	warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("yellow")).Bold(true)
+	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
+	redStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	grayStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
 
-	// Build single dense line with all critical info
-	parts := []string{
-		fmt.Sprintf("🌿 %s", branchStyle.Render(d.branch)),
-	}
+	var lines []string
 
+	// Line 1: Repo name + branch + warning
+	headerParts := []string{}
+	if d.repoName != "" {
+		headerParts = append(headerParts, repoStyle.Render(d.repoName))
+	}
+	headerParts = append(headerParts, fmt.Sprintf("🌿 %s", branchStyle.Render(d.branch)))
 	if d.behindCount > 0 {
-		parts = append(parts, warningStyle.Render(fmt.Sprintf("⚠ ↓%d behind", d.behindCount)))
+		headerParts = append(headerParts, warningStyle.Render(fmt.Sprintf("⚠ ↓%d behind", d.behindCount)))
+	}
+	lines = append(lines, "  "+strings.Join(headerParts, " | "))
+
+	// Line 2: Metrics
+	var addedText, deletedText string
+	if d.linesAdded > 0 {
+		addedText = greenStyle.Render(fmt.Sprintf("+%d", d.linesAdded))
+	} else {
+		addedText = grayStyle.Render("+0")
+	}
+	if d.linesDeleted > 0 {
+		deletedText = redStyle.Render(fmt.Sprintf("-%d", d.linesDeleted))
+	} else {
+		deletedText = grayStyle.Render("-0")
 	}
 
-	parts = append(parts, fmt.Sprintf("📁 %d files", len(d.files)))
+	metricsParts := []string{
+		fmt.Sprintf("📁 %d files", len(d.files)),
+		fmt.Sprintf("📊 %s/%s", addedText, deletedText),
+	}
+	if d.aheadCount > 0 {
+		metricsParts = append(metricsParts, fmt.Sprintf("⬆ %d ahead", d.aheadCount))
+	}
+	metricsParts = append(metricsParts, fmt.Sprintf("⏰ %s", d.formatTimeSinceCommit()))
+	lines = append(lines, "  "+strings.Join(metricsParts, "  "))
 
-	infoLine := "  " + strings.Join(parts, " | ")
+	// Lines 3-4: Up to 2 files
+	if len(d.files) > 0 {
+		maxFiles := 2
+		if len(d.files) < maxFiles {
+			maxFiles = len(d.files)
+		}
 
-	// Logo on right side
+		modifiedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("white")).Bold(true)
+		deletedStatusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		addedStatusStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
+
+		for i := 0; i < maxFiles; i++ {
+			file := d.files[i]
+
+			var statusStyle lipgloss.Style
+			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+				statusStyle = deletedStatusStyle
+			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+				statusStyle = addedStatusStyle
+			} else {
+				statusStyle = modifiedStyle
+			}
+
+			status := statusStyle.Render(file.DisplayStatus())
+
+			// Truncate path if needed
+			displayPath := file.Path
+			maxPathWidth := d.width - 15
+			if maxPathWidth < 20 {
+				maxPathWidth = 20
+			}
+			if len(displayPath) > maxPathWidth {
+				displayPath = "..." + displayPath[len(displayPath)-(maxPathWidth-3):]
+			}
+
+			var pathStyle lipgloss.Style
+			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+			} else {
+				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("white"))
+			}
+
+			lines = append(lines, fmt.Sprintf("   %s  %s", status, pathStyle.Render(displayPath)))
+		}
+
+		if len(d.files) > 2 {
+			remaining := len(d.files) - 2
+			lines = append(lines, grayStyle.Render(fmt.Sprintf("   ... +%d more", remaining)))
+		}
+	}
+
+	mainContent := strings.Join(lines, "\n")
+
+	// Calculate padding to push footer to bottom
+	mainHeight := strings.Count(mainContent, "\n") + 1
+	bottomPadding := d.height - mainHeight - 2
+	if bottomPadding < 0 {
+		bottomPadding = 0
+	}
+
+	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
+
+	// Footer with hints and logo
+	hint := hintStyle.Render("n new • c commit")
 	logo := logoStyle.Render("🧙 GitGoblin")
-	lineLen := len(infoLine) - 2 // Approximate (emojis count as more)
+
+	hintLen := 16
 	logoLen := 12
-	spacing := d.width - lineLen - logoLen - 10
-	if spacing < 2 {
-		spacing = 2
+	spacing := d.width - hintLen - logoLen - 5
+	if spacing < 1 {
+		spacing = 1
 	}
 
-	fullLine := infoLine + strings.Repeat(" ", spacing) + logo
+	bottomLine := "     " + hint + strings.Repeat(" ", spacing) + logo
 
-	// Center vertically if we have some space
-	topPadding := (d.height - 1) / 2
-	if topPadding < 0 {
-		topPadding = 0
-	}
-
-	return strings.Repeat("\n", topPadding) + fullLine
+	return paddedContent + "\n" + bottomLine
 }
 
 // renderNormalView renders the full layout for terminals >= 20 rows
