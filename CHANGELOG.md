@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.3.0...v0.4.0) (2026-02-07)
+
+
+### Features
+
+* add compact dashboard modes for small terminals ([d45cfd1](https://github.com/Johannes-Berggren/GitGoblin/commit/d45cfd102ef395e270dcc8c680b5521c9d03791d))
+
+
+### Bug Fixes
+
+* correct module path casing to match GitHub repo ([6b79879](https://github.com/Johannes-Berggren/GitGoblin/commit/6b79879442ea1ef86c953b209e04b781eca93e67))
+
 ## [0.3.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.2.0...v0.3.0) (2025-12-08)
 
 
