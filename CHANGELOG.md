@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.4.0...v0.5.0) (2026-02-07)
+
+
+### Features
+
+* enhance ultra-compact mode with repo name, metrics, and files ([ce4f488](https://github.com/Johannes-Berggren/GitGoblin/commit/ce4f48889a42e36ab4a3c8e6a6eb064baa05d121))
+
 ## [0.4.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.3.0...v0.4.0) (2026-02-07)
 
 
