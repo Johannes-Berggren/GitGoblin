@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.5.0...v0.6.0) (2026-02-07)
+
+
+### Features
+
+* update keyboard shortcut hints format ([5b49344](https://github.com/Johannes-Berggren/GitGoblin/commit/5b4934445cadcc8364e1ce132172e1b4ba0ba14d))
+
 ## [0.5.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.4.0...v0.5.0) (2026-02-07)
 
 
