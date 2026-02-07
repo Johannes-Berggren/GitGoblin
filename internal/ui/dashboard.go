@@ -458,10 +458,10 @@ func (d *DashboardView) renderCompactView() string {
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
 
-	hint := hintStyle.Render("n new branch • c commit")
+	hint := hintStyle.Render("n: new branch • c: commit • m: merge")
 	logo := logoStyle.Render("🧙 GitGoblin")
 
-	hintLen := 24
+	hintLen := 38
 	logoLen := 12
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
@@ -585,10 +585,10 @@ func (d *DashboardView) renderUltraCompactView() string {
 	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
 
 	// Footer with hints and logo
-	hint := hintStyle.Render("n new • c commit")
+	hint := hintStyle.Render("n: new • c: commit • m: merge")
 	logo := logoStyle.Render("🧙 GitGoblin")
 
-	hintLen := 16
+	hintLen := 30
 	logoLen := 12
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
@@ -773,10 +773,10 @@ func (d *DashboardView) renderNormalView() string {
 
 	// Add hint on left, logo on right
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	hint := hintStyle.Render("n new branch • c commit")
+	hint := hintStyle.Render("n: new branch • c: commit • m: merge")
 
 	// Calculate spacing between hint and logo
-	hintLen := 24 // "n new branch • c commit"
+	hintLen := 38 // "n: new branch • c: commit • m: merge"
 	logoLen := 12 // "🧙 GitGoblin"
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
