@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.6.0...v0.7.0) (2026-03-25)
+
+
+### Features
+
+* add branch checkout, rename, search, and dashboard layout redesign ([bdfb61d](https://github.com/Johannes-Berggren/GitGoblin/commit/bdfb61d0531486c4f77537fa29f7808f6b954ea4))
+
 ## [0.6.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.5.0...v0.6.0) (2026-02-07)
 
 
