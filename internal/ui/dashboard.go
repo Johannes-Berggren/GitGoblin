@@ -153,7 +153,7 @@ func (d *DashboardView) Update(msg tea.Msg) (*DashboardView, tea.Cmd) {
 
 // getDisplayMode determines which display mode to use based on terminal height
 func (d *DashboardView) getDisplayMode() int {
-	if d.height >= 20 {
+	if d.height >= 25 {
 		return displayModeNormal
 	} else if d.height >= 12 {
 		return displayModeCompact
@@ -176,11 +176,10 @@ func (d *DashboardView) formatTimeSinceCommit() string {
 	return fmt.Sprintf("%.1fd ago", days)
 }
 
-// renderStatusBox creates a bordered box with development metrics
-func (d *DashboardView) renderStatusBox() string {
+// renderMetricsPanel creates a bordered box with development metrics (no margins, tight padding)
+func (d *DashboardView) renderMetricsPanel() string {
 	timeSinceCommit := d.formatTimeSinceCommit()
 
-	// Create metrics display with emoji icons
 	labelStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("cyan")).
 		Bold(true)
@@ -199,7 +198,6 @@ func (d *DashboardView) renderStatusBox() string {
 	grayStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240"))
 
-	// Build line stats with colored numbers (gray for zeros)
 	var addedText, deletedText string
 	if d.linesAdded > 0 {
 		addedText = greenStyle.Render(fmt.Sprintf("+%d", d.linesAdded))
@@ -222,7 +220,6 @@ func (d *DashboardView) renderStatusBox() string {
 		fmt.Sprintf("📊 %s %s", labelStyle.Render("Lines:"), lineStats),
 	}
 
-	// Add default branch comparison if not on default branch
 	if !d.isDefaultBranch && d.defaultBranch != "" {
 		orangeStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("214")).
@@ -239,13 +236,10 @@ func (d *DashboardView) renderStatusBox() string {
 
 	content := strings.Join(metrics, "\n")
 
-	// Create bordered box with subtle colors
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")). // Subtle gray instead of bright magenta
-		Padding(1, 2).
-		MarginLeft(5).
-		MarginBottom(1)
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 2)
 
 	return boxStyle.Render(content)
 }
@@ -458,10 +452,10 @@ func (d *DashboardView) renderCompactView() string {
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 	logoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
 
-	hint := hintStyle.Render("n: new branch • c: commit • m: merge")
+	hint := hintStyle.Render("b: branches • n: new branch • r: rename • c: commit")
 	logo := logoStyle.Render("🧙 GitGoblin")
 
-	hintLen := 38
+	hintLen := 52
 	logoLen := 12
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
@@ -585,10 +579,10 @@ func (d *DashboardView) renderUltraCompactView() string {
 	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
 
 	// Footer with hints and logo
-	hint := hintStyle.Render("n: new • c: commit • m: merge")
+	hint := hintStyle.Render("b: list • n: new • r: ren • c: commit")
 	logo := logoStyle.Render("🧙 GitGoblin")
 
-	hintLen := 30
+	hintLen := 39
 	logoLen := 12
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
@@ -601,183 +595,176 @@ func (d *DashboardView) renderUltraCompactView() string {
 }
 
 // renderNormalView renders the full layout for terminals >= 20 rows
-func (d *DashboardView) renderNormalView() string {
-	// Branch as large ASCII art (top)
-	branchAscii := d.renderBranchAscii()
-
-	// Remote status (only if behind origin) - styled alert box
-	var remoteStatus string
-	if d.behindCount > 0 {
-		warningTextStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("yellow")).
-			Bold(true)
-
-		warningBoxStyle := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("214")). // Orange border
-			Background(lipgloss.Color("58")).        // Subtle dark orange background
-			Padding(0, 2).
-			MarginBottom(1).
-			MarginLeft(5)
-
-		warningText := warningTextStyle.Render(fmt.Sprintf("⚠  Behind origin: ↓%d", d.behindCount))
-		remoteStatus = warningBoxStyle.Render(warningText)
-	}
-
-	// Status box with metrics
-	statusBox := d.renderStatusBox()
-
-	// Main content area
-	var content string
+// renderFileList renders the file list with an optional max file limit
+func (d *DashboardView) renderFileList(maxFiles int) string {
 	if len(d.files) == 0 {
-		// Clean state - no message needed (metrics show 0 files)
-		content = ""
-	} else {
-		// Dirty state - full width file list, ALL files
-		titleStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("cyan")).
-			Bold(true)
-
-		// Define status styles with proper colors
-		modifiedStatusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("white")).
-			Bold(true)
-
-		deletedStatusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Bold(true)
-
-		addedStatusStyle := lipgloss.NewStyle().
-			Foreground(lipgloss.Color("34")).
-			Bold(true)
-
-		// Styles for line stats
-		addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
-		deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
-		grayStatsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-
-		// Build file list content
-		var fileList strings.Builder
-
-		// Add title
-		title := titleStyle.Render(fmt.Sprintf("📄 %d Uncommitted File(s)", len(d.files)))
-		fileList.WriteString(title + "\n\n")
-
-		// Calculate max path width (terminal width - margin - status - spacing - stats)
-		// Format: " MM  path (+999/-999)\n"
-		// Margin: 5, Status: 4, Spacing: 2, Stats: ~15, Buffer: 5
-		maxPathWidth := d.width - 31
-		if maxPathWidth < 20 {
-			maxPathWidth = 20 // Minimum readable width
-		}
-
-		// Show ALL files (no limit)
-		for _, file := range d.files {
-			// Determine status color based on file state
-			var statusStyle lipgloss.Style
-			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
-				statusStyle = deletedStatusStyle
-			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
-				statusStyle = addedStatusStyle
-			} else {
-				// Modified, Renamed, Copied, Updated - use white
-				statusStyle = modifiedStatusStyle
-			}
-
-			status := statusStyle.Render(file.DisplayStatus())
-
-			// Truncate path from left if too long
-			displayPath := file.Path
-			if len(displayPath) > maxPathWidth {
-				// Keep the end of the path (filename is most important)
-				displayPath = "..." + displayPath[len(displayPath)-(maxPathWidth-3):]
-			}
-
-			// Apply same color to path as status
-			var pathStyle lipgloss.Style
-			if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
-				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-			} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
-				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
-			} else {
-				pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("white"))
-			}
-			path := pathStyle.Render(displayPath)
-
-			// Get line stats for this file
-			var statsText string
-			if stats, ok := d.fileStats[file.Path]; ok {
-				added := stats[0]
-				deleted := stats[1]
-				if added > 0 || deleted > 0 {
-					// Use gray for zero values, green/red for actual changes
-					var addText, delText string
-					if added > 0 {
-						addText = addedStyle.Render(fmt.Sprintf("+%d", added))
-					} else {
-						addText = grayStatsStyle.Render(fmt.Sprintf("+%d", added))
-					}
-
-					if deleted > 0 {
-						delText = deletedStyle.Render(fmt.Sprintf("-%d", deleted))
-					} else {
-						delText = grayStatsStyle.Render(fmt.Sprintf("-%d", deleted))
-					}
-
-					statsText = fmt.Sprintf(" (%s/%s)", addText, delText)
-				}
-			}
-
-			fileList.WriteString(fmt.Sprintf(" %s  %s%s\n", status, path, statsText))
-		}
-
-		// Apply left margin to entire file list
-		fileListStyle := lipgloss.NewStyle().
-			MarginLeft(5).
-			MarginTop(1)
-
-		content = fileListStyle.Render(strings.TrimRight(fileList.String(), "\n"))
+		return ""
 	}
 
-	// Create subtle divider
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("cyan")).
+		Bold(true)
+
+	modifiedStatusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("white")).
+		Bold(true)
+
+	deletedStatusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("196")).
+		Bold(true)
+
+	addedStatusStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("34")).
+		Bold(true)
+
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("34")).Bold(true)
+	deletedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	grayStatsStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	var fileList strings.Builder
+
+	title := titleStyle.Render(fmt.Sprintf("📄 %d Uncommitted File(s)", len(d.files)))
+	fileList.WriteString(title + "\n\n")
+
+	maxPathWidth := d.width - 31
+	if maxPathWidth < 20 {
+		maxPathWidth = 20
+	}
+
+	filesToShow := len(d.files)
+	if maxFiles > 0 && filesToShow > maxFiles {
+		filesToShow = maxFiles
+	}
+
+	for i := 0; i < filesToShow; i++ {
+		file := d.files[i]
+
+		var statusStyle lipgloss.Style
+		if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+			statusStyle = deletedStatusStyle
+		} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+			statusStyle = addedStatusStyle
+		} else {
+			statusStyle = modifiedStatusStyle
+		}
+
+		status := statusStyle.Render(file.DisplayStatus())
+
+		displayPath := file.Path
+		if len(displayPath) > maxPathWidth {
+			displayPath = "..." + displayPath[len(displayPath)-(maxPathWidth-3):]
+		}
+
+		var pathStyle lipgloss.Style
+		if file.Status == models.StatusDeleted || file.StagedStatus == models.StatusDeleted {
+			pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+		} else if file.IsUntracked || file.Status == models.StatusAdded || file.StagedStatus == models.StatusAdded {
+			pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("34"))
+		} else {
+			pathStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("white"))
+		}
+		path := pathStyle.Render(displayPath)
+
+		var statsText string
+		if stats, ok := d.fileStats[file.Path]; ok {
+			added := stats[0]
+			deleted := stats[1]
+			if added > 0 || deleted > 0 {
+				var addText, delText string
+				if added > 0 {
+					addText = addedStyle.Render(fmt.Sprintf("+%d", added))
+				} else {
+					addText = grayStatsStyle.Render(fmt.Sprintf("+%d", added))
+				}
+				if deleted > 0 {
+					delText = deletedStyle.Render(fmt.Sprintf("-%d", deleted))
+				} else {
+					delText = grayStatsStyle.Render(fmt.Sprintf("-%d", deleted))
+				}
+				statsText = fmt.Sprintf(" (%s/%s)", addText, delText)
+			}
+		}
+
+		fileList.WriteString(fmt.Sprintf(" %s  %s%s\n", status, path, statsText))
+	}
+
+	if maxFiles > 0 && len(d.files) > maxFiles {
+		remaining := len(d.files) - maxFiles
+		moreStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+		fileList.WriteString(moreStyle.Render(fmt.Sprintf(" ... and %d more file(s)\n", remaining)))
+	}
+
+	fileListStyle := lipgloss.NewStyle().
+		MarginLeft(5).
+		MarginTop(1)
+
+	return fileListStyle.Render(strings.TrimRight(fileList.String(), "\n"))
+}
+
+// renderNormalView renders the full layout for terminals >= 25 rows
+func (d *DashboardView) renderNormalView() string {
+	branchPanel := d.renderBranchPanel()
+	metricsPanel := d.renderMetricsPanel()
+
+	// Side-by-side layout if terminal is wide enough, otherwise vertical
+	var headerBlock string
+	if d.width >= 60 {
+		gap := "  "
+		headerBlock = lipgloss.JoinHorizontal(lipgloss.Top, branchPanel, gap, metricsPanel)
+	} else {
+		headerBlock = lipgloss.JoinVertical(lipgloss.Left, branchPanel, metricsPanel)
+	}
+
+	headerStyle := lipgloss.NewStyle().
+		MarginLeft(5).
+		MarginTop(1)
+	headerBlock = headerStyle.Render(headerBlock)
+
+	// Divider
+	dividerWidth := d.width - 10
+	if dividerWidth < 20 {
+		dividerWidth = 20
+	}
 	dividerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240")).
 		MarginLeft(5)
-	divider := dividerStyle.Render("─────────────────────────────────────────")
+	divider := dividerStyle.Render(strings.Repeat("─", dividerWidth))
 
-	// Build top section (branch + remote + status box)
-	var topSection string
-	if remoteStatus != "" {
-		topSection = lipgloss.JoinVertical(lipgloss.Left, branchAscii, "", remoteStatus, "", statusBox, "", divider)
-	} else {
-		topSection = lipgloss.JoinVertical(lipgloss.Left, branchAscii, "", statusBox, "", divider)
+	// Calculate available rows for files
+	headerHeight := strings.Count(headerBlock, "\n") + 1
+	footerRows := 2  // padding + footer line
+	dividerRows := 1
+	titleRows := 3   // title + blank line + margin-top
+	availableFileRows := d.height - headerHeight - footerRows - dividerRows - titleRows
+	if availableFileRows < 1 {
+		availableFileRows = 1
 	}
+
+	// File list (0 = no limit, positive = max files)
+	content := d.renderFileList(availableFileRows)
+
+	// Combine
+	mainContent := lipgloss.JoinVertical(lipgloss.Left, headerBlock, divider, content)
 
 	// Logo in bottom right
 	logo := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("170")).
 		Render("🧙 GitGoblin")
 
-	// Combine everything
-	mainContent := lipgloss.JoinVertical(lipgloss.Left, topSection, content)
-
-	// Position logo at bottom right
 	mainHeight := strings.Count(mainContent, "\n") + 1
 	bottomPadding := d.height - mainHeight - 2
 	if bottomPadding < 0 {
 		bottomPadding = 0
 	}
 
-	// Add padding to push logo down
 	paddedContent := mainContent + strings.Repeat("\n", bottomPadding)
 
-	// Add hint on left, logo on right
+	// Footer
 	hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
-	hint := hintStyle.Render("n: new branch • c: commit • m: merge")
+	hint := hintStyle.Render("b: branches • n: new branch • r: rename • c: commit")
 
-	// Calculate spacing between hint and logo
-	hintLen := 38 // "n: new branch • c: commit • m: merge"
-	logoLen := 12 // "🧙 GitGoblin"
+	hintLen := 52
+	logoLen := 12
 	spacing := d.width - hintLen - logoLen - 5
 	if spacing < 1 {
 		spacing = 1
@@ -805,23 +792,44 @@ func (d *DashboardView) View() string {
 	}
 }
 
-// renderBranchAscii creates a simple bordered box with the branch name
-func (d *DashboardView) renderBranchAscii() string {
+// renderBranchPanel creates a bordered box with branch name and optional warning (no margins)
+func (d *DashboardView) renderBranchPanel() string {
 	branchStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("cyan"))
 
+	// Truncate branch name if needed to leave room for metrics panel
+	displayBranch := d.branch
+	maxBranchLen := (d.width - 5 - 2) / 2 // (termWidth - margin - gap) / 2, minus box chrome
+	maxBranchLen -= 12                      // padding(4) + border(2) + icon(6)
+	if maxBranchLen < 15 {
+		maxBranchLen = 15
+	}
+	if len(displayBranch) > maxBranchLen {
+		displayBranch = "..." + displayBranch[len(displayBranch)-(maxBranchLen-3):]
+	}
+
+	branchText := fmt.Sprintf("🌿 %s", branchStyle.Render(displayBranch))
+
+	var lines []string
+	lines = append(lines, branchText)
+
+	if d.behindCount > 0 {
+		warningStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("yellow")).
+			Bold(true)
+		lines = append(lines, "")
+		lines = append(lines, warningStyle.Render(fmt.Sprintf("⚠  Behind origin: ↓%d", d.behindCount)))
+	}
+
+	content := strings.Join(lines, "\n")
+
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("cyan")).
-		Padding(0, 2).
-		MarginTop(1).
-		MarginBottom(1).
-		MarginLeft(5)
+		Padding(0, 2)
 
-	// Add branch icon
-	branchText := fmt.Sprintf("🌿 %s", d.branch)
-	return boxStyle.Render(branchStyle.Render(branchText))
+	return boxStyle.Render(content)
 }
 
 // parseUpstream extracts ahead/behind counts from upstream string

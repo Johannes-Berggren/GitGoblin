@@ -14,6 +14,7 @@ const (
 	viewDashboard viewMode = iota
 	viewBranchInput
 	viewCommitFlow
+	viewBranchList
 )
 
 type errMsg struct {
@@ -28,6 +29,7 @@ type Model struct {
 	dashboard   *DashboardView
 	branchInput *BranchInputView
 	commitFlow  *CommitFlowView
+	branchView  *BranchView
 	viewMode    viewMode
 	statusMsg   string
 	statusStyle lipgloss.Style
@@ -63,7 +65,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "n":
-			// Only handle 'n' in dashboard mode
 			if m.viewMode == viewDashboard {
 				m.branchInput = NewBranchInputView()
 				m.viewMode = viewBranchInput
@@ -71,17 +72,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.branchInput.Init()
 			}
 		case "c":
-			// Only handle 'c' in dashboard mode
 			if m.viewMode == viewDashboard {
 				m.commitFlow = NewCommitFlowView()
 				m.viewMode = viewCommitFlow
 				m.statusMsg = ""
 				return m, m.commitFlow.Init()
 			}
+		case "b":
+			if m.viewMode == viewDashboard {
+				m.branchView = NewBranchView()
+				m.viewMode = viewBranchList
+				m.statusMsg = ""
+				return m, m.branchView.Init()
+			}
+		case "r":
+			if m.viewMode == viewDashboard {
+				currentBranch := m.dashboard.branch
+				if currentBranch != "" {
+					m.branchInput = NewBranchRenameView(currentBranch)
+					m.viewMode = viewBranchInput
+					m.statusMsg = ""
+					return m, m.branchInput.Init()
+				}
+			}
 		}
 
 	case branchInputDoneMsg:
-		// Create the branch
 		err := git.CreateBranchFromDefault(msg.name)
 		m.viewMode = viewDashboard
 		m.branchInput = nil
@@ -100,6 +116,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case branchInputCancelMsg:
 		m.viewMode = viewDashboard
 		m.branchInput = nil
+		return m, nil
+
+	case branchRenameDoneMsg:
+		err := git.RenameBranch(msg.oldName, msg.newName)
+		m.viewMode = viewDashboard
+		m.branchInput = nil
+		if err != nil {
+			m.statusMsg = "Error: " + err.Error()
+			m.statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		} else {
+			m.statusMsg = "Renamed branch: " + msg.oldName + " → " + msg.newName
+			m.statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+		}
+		return m, tea.Batch(
+			m.dashboard.loadData(),
+			tea.Tick(time.Second*3, func(t time.Time) tea.Msg { return clearStatusMsg{} }),
+		)
+
+	case branchSwitchDoneMsg:
+		err := git.SwitchBranch(msg.name)
+		m.viewMode = viewDashboard
+		m.branchView = nil
+		if err != nil {
+			m.statusMsg = "Error: " + err.Error()
+			m.statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+		} else {
+			m.statusMsg = "Switched to branch: " + msg.name
+			m.statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("10"))
+		}
+		return m, tea.Batch(
+			m.dashboard.loadData(),
+			tea.Tick(time.Second*3, func(t time.Time) tea.Msg { return clearStatusMsg{} }),
+		)
+
+	case branchSwitchCancelMsg:
+		m.viewMode = viewDashboard
+		m.branchView = nil
 		return m, nil
 
 	case commitFlowDoneMsg:
@@ -122,12 +175,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case dashboardDataMsg:
-		// Forward to dashboard
 		m.dashboard, cmd = m.dashboard.Update(msg)
 		return m, cmd
 
+	case branchesLoadedMsg:
+		if m.branchView != nil {
+			m.branchView, cmd = m.branchView.Update(msg)
+			return m, cmd
+		}
+
 	case tea.WindowSizeMsg:
-		// Forward window size to dashboard and active views
 		m.dashboard, cmd = m.dashboard.Update(msg)
 		if m.branchInput != nil {
 			m.branchInput, _ = m.branchInput.Update(msg)
@@ -135,10 +192,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.commitFlow != nil {
 			m.commitFlow, _ = m.commitFlow.Update(msg)
 		}
+		if m.branchView != nil {
+			m.branchView, _ = m.branchView.Update(msg)
+		}
 		return m, cmd
 
 	case tickMsg:
-		// Auto-refresh on tick (only in dashboard mode)
 		if m.viewMode == viewDashboard {
 			return m, tea.Batch(
 				m.dashboard.loadData(),
@@ -161,6 +220,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.commitFlow, cmd = m.commitFlow.Update(msg)
 		return m, cmd
 	}
+	if m.viewMode == viewBranchList && m.branchView != nil {
+		m.branchView, cmd = m.branchView.Update(msg)
+		return m, cmd
+	}
 
 	return m, cmd
 }
@@ -174,6 +237,10 @@ func (m Model) View() string {
 	case viewCommitFlow:
 		if m.commitFlow != nil {
 			return m.commitFlow.View()
+		}
+	case viewBranchList:
+		if m.branchView != nil {
+			return m.branchView.View()
 		}
 	}
 

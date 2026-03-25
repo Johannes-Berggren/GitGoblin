@@ -6,14 +6,28 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+type branchInputMode int
+
+const (
+	branchInputModeCreate branchInputMode = iota
+	branchInputModeRename
+)
+
 type branchInputDoneMsg struct {
 	name string
 }
 
 type branchInputCancelMsg struct{}
 
+type branchRenameDoneMsg struct {
+	oldName string
+	newName string
+}
+
 type BranchInputView struct {
 	textInput textinput.Model
+	mode      branchInputMode
+	oldName   string
 	width     int
 	height    int
 }
@@ -27,6 +41,22 @@ func NewBranchInputView() *BranchInputView {
 
 	return &BranchInputView{
 		textInput: ti,
+		mode:      branchInputModeCreate,
+	}
+}
+
+func NewBranchRenameView(currentBranchName string) *BranchInputView {
+	ti := textinput.New()
+	ti.Placeholder = currentBranchName
+	ti.SetValue(currentBranchName)
+	ti.Focus()
+	ti.CharLimit = 100
+	ti.Width = 40
+
+	return &BranchInputView{
+		textInput: ti,
+		mode:      branchInputModeRename,
+		oldName:   currentBranchName,
 	}
 }
 
@@ -43,6 +73,11 @@ func (b *BranchInputView) Update(msg tea.Msg) (*BranchInputView, tea.Cmd) {
 		case "enter":
 			name := b.textInput.Value()
 			if name != "" {
+				if b.mode == branchInputModeRename {
+					return b, func() tea.Msg {
+						return branchRenameDoneMsg{oldName: b.oldName, newName: name}
+					}
+				}
 				return b, func() tea.Msg { return branchInputDoneMsg{name: name} }
 			}
 			return b, nil
@@ -67,7 +102,16 @@ func (b *BranchInputView) View() string {
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("241"))
 
+	var prompt, help string
+	if b.mode == branchInputModeRename {
+		prompt = "Rename branch: "
+		help = "enter to rename • esc to cancel"
+	} else {
+		prompt = "New branch name: "
+		help = "enter to create • esc to cancel"
+	}
+
 	return "\n" +
-		promptStyle.Render("New branch name: ") + b.textInput.View() + "\n\n" +
-		helpStyle.Render("enter to create • esc to cancel")
+		promptStyle.Render(prompt) + b.textInput.View() + "\n\n" +
+		helpStyle.Render(help)
 }

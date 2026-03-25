@@ -127,6 +127,16 @@ func DeleteBranch(name string, force bool) error {
 	return nil
 }
 
+// RenameBranch renames a branch
+func RenameBranch(oldName, newName string) error {
+	cmd := exec.Command("git", "branch", "-m", oldName, newName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to rename branch: %s", string(output))
+	}
+	return nil
+}
+
 // GetDefaultBranch detects the repository's default branch
 func GetDefaultBranch() (string, error) {
 	// Method 1: Try symbolic-ref (fastest, most reliable if set)
