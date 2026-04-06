@@ -254,13 +254,33 @@ func (d *DashboardView) renderCompactBranchLine() string {
 		Foreground(lipgloss.Color("yellow")).
 		Bold(true)
 
-	line := fmt.Sprintf("  🌿 %s", branchStyle.Render(d.branch))
+	repoStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("white"))
+
+	// Truncate repo name if needed
+	displayRepoName := d.repoName
+	maxRepoLen := d.width / 3
+	if maxRepoLen < 10 {
+		maxRepoLen = 10
+	}
+	if len(displayRepoName) > maxRepoLen {
+		displayRepoName = displayRepoName[:maxRepoLen-3] + "..."
+	}
+
+	var line string
+	if d.repoName != "" {
+		line = fmt.Sprintf("  %s | 🌿 %s", repoStyle.Render(displayRepoName), branchStyle.Render(d.branch))
+	} else {
+		line = fmt.Sprintf("  🌿 %s", branchStyle.Render(d.branch))
+	}
 
 	if d.behindCount > 0 {
 		// Add spacing and warning
 		warning := warningStyle.Render(fmt.Sprintf("⚠ ↓%d behind origin", d.behindCount))
 		// Calculate spacing to spread across width
 		lineLen := 5 + len(d.branch) // "  🌿 " + branch
+		if d.repoName != "" {
+			lineLen += len(displayRepoName) + 3 // " | " separator
+		}
 		warningLen := 15 + len(fmt.Sprintf("%d", d.behindCount))
 		spacing := d.width - lineLen - warningLen - 2
 		if spacing < 2 {
@@ -483,7 +503,15 @@ func (d *DashboardView) renderUltraCompactView() string {
 	// Line 1: Repo name + branch + warning
 	headerParts := []string{}
 	if d.repoName != "" {
-		headerParts = append(headerParts, repoStyle.Render(d.repoName))
+		displayRepoName := d.repoName
+		maxRepoLen := d.width / 3
+		if maxRepoLen < 10 {
+			maxRepoLen = 10
+		}
+		if len(displayRepoName) > maxRepoLen {
+			displayRepoName = displayRepoName[:maxRepoLen-3] + "..."
+		}
+		headerParts = append(headerParts, repoStyle.Render(displayRepoName))
 	}
 	headerParts = append(headerParts, fmt.Sprintf("🌿 %s", branchStyle.Render(d.branch)))
 	if d.behindCount > 0 {
@@ -811,7 +839,17 @@ func (d *DashboardView) renderBranchPanel() string {
 
 	branchText := fmt.Sprintf("🌿 %s", branchStyle.Render(displayBranch))
 
+	repoStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("white"))
+
 	var lines []string
+	if d.repoName != "" {
+		displayRepoName := d.repoName
+		if len(displayRepoName) > maxBranchLen {
+			displayRepoName = displayRepoName[:maxBranchLen-3] + "..."
+		}
+		lines = append(lines, repoStyle.Render(displayRepoName))
+		lines = append(lines, "")
+	}
 	lines = append(lines, branchText)
 
 	if d.behindCount > 0 {
