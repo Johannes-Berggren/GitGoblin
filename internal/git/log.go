@@ -129,6 +129,8 @@ func GetCurrentBranch() (string, error) {
 
 // GetRepoName returns the repository name from the remote URL or directory
 func GetRepoName() (string, error) {
+	var name string
+
 	// Try to get from remote URL first
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	output, err := cmd.Output()
@@ -140,29 +142,58 @@ func GetRepoName() (string, error) {
 		url = strings.TrimSuffix(url, ".git")
 		parts := strings.Split(url, "/")
 		if len(parts) > 0 {
-			name := parts[len(parts)-1]
+			n := parts[len(parts)-1]
 			// Handle SSH format with colon
-			if colonIdx := strings.LastIndex(name, ":"); colonIdx != -1 {
-				name = name[colonIdx+1:]
+			if colonIdx := strings.LastIndex(n, ":"); colonIdx != -1 {
+				n = n[colonIdx+1:]
 			}
-			if name != "" {
-				return name, nil
+			if n != "" {
+				name = n
 			}
 		}
 	}
 
 	// Fallback to directory name
-	cmd = exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err = cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get repo name: %w", err)
+	if name == "" {
+		cmd = exec.Command("git", "rev-parse", "--show-toplevel")
+		output, err = cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("failed to get repo name: %w", err)
+		}
+		path := strings.TrimSpace(string(output))
+		parts := strings.Split(path, "/")
+		if len(parts) > 0 {
+			name = parts[len(parts)-1]
+		}
 	}
-	path := strings.TrimSpace(string(output))
-	parts := strings.Split(path, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1], nil
+
+	if name == "" {
+		return "", fmt.Errorf("could not determine repo name")
 	}
-	return "", fmt.Errorf("could not determine repo name")
+
+	// Detect worktree: if --git-dir differs from --git-common-dir, we're in a worktree
+	gitDir, err1 := exec.Command("git", "rev-parse", "--git-dir").Output()
+	gitCommonDir, err2 := exec.Command("git", "rev-parse", "--git-common-dir").Output()
+	if err1 == nil && err2 == nil {
+		gd := strings.TrimSpace(string(gitDir))
+		gcd := strings.TrimSpace(string(gitCommonDir))
+		if gd != gcd {
+			// In a worktree — append the worktree folder name
+			toplevel, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+			if err == nil {
+				wtPath := strings.TrimSpace(string(toplevel))
+				parts := strings.Split(wtPath, "/")
+				if len(parts) > 0 {
+					wtName := parts[len(parts)-1]
+					if wtName != name {
+						name = name + " (" + wtName + ")"
+					}
+				}
+			}
+		}
+	}
+
+	return name, nil
 }
 
 // GetStatus returns a simple status of the repo
