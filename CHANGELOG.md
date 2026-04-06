@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.7.0...v0.8.0) (2026-04-06)
+
+
+### Features
+
+* show repo name in all dashboard display modes ([30b450d](https://github.com/Johannes-Berggren/GitGoblin/commit/30b450d05239651512aad4ab8683f5241c69990c))
+* show worktree folder name in repo name display ([692f952](https://github.com/Johannes-Berggren/GitGoblin/commit/692f95237d73e1fb9f00c30ffdb2b23f77289781))
+
 ## [0.7.0](https://github.com/Johannes-Berggren/GitGoblin/compare/v0.6.0...v0.7.0) (2026-03-25)
 
 
